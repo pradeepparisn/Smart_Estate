@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-
+const API_BASE = "/api";
+const STORAGE_KEY = "smartestate_user";
 // ── DESIGN TOKENS ──────────────────────────────────────────────────────────
 const G = {
   bg: "#0A0F1E",
@@ -21,8 +22,8 @@ const G = {
 
 // ── MOCK DATA ──────────────────────────────────────────────────────────────
 const MOCK_USERS = [
-  { id: 1, name: "Arjun Sharma", email: "arjun@gmail.com", password: "123456", role: "seller", phone: "+91 98765 43210", city: "Bangalore", bio: "Real estate investor with 8+ years experience.", avatar: "AS" },
-  { id: 2, name: "Priya Mehta", email: "priya@gmail.com", password: "123456", role: "buyer", phone: "+91 87654 32109", city: "Hyderabad", bio: "Looking for the perfect home.", avatar: "PM" },
+  { id: 1, name: "Arjun Sharma", email: "arjun@gmail.com", password: "123456", role: "user", phone: "+91 98765 43210", area: "Koramangala", city: "Bangalore", bio: "Real estate investor with 8+ years experience.", avatar: "AS" },
+  { id: 2, name: "Priya Mehta", email: "priya@gmail.com", password: "123456", role: "user", phone: "+91 87654 32109", area: "Indiranagar", city: "Bangalore", bio: "Looking for the perfect home.", avatar: "PM" },
 ];
 
 const MOCK_PROPERTIES = [
@@ -41,7 +42,7 @@ const fmt = (n) => n >= 10000000 ? `₹${(n/10000000).toFixed(2)} Cr` : n >= 100
 const uid = () => Math.random().toString(36).slice(2);
 
 // ── SHARED COMPONENTS ──────────────────────────────────────────────────────
-const Btn = ({ children, onClick, variant = "primary", size = "md", disabled, style = {} }) => {
+const Btn = ({ children, onClick, variant = "primary", size = "md", disabled, style = {}, type = "button" }) => {
   const base = {
     border: "none", cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit",
     fontWeight: 600, borderRadius: 10, transition: "all 0.2s", opacity: disabled ? 0.5 : 1,
@@ -56,7 +57,7 @@ const Btn = ({ children, onClick, variant = "primary", size = "md", disabled, st
     success: { background: G.green, color: "#fff" },
     gold: { background: G.gold, color: "#111" },
   };
-  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...sizes[size], ...variants[variant] }}>{children}</button>;
+  return <button type={type} onClick={onClick} disabled={disabled} style={{ ...base, ...sizes[size], ...variants[variant] }}>{children}</button>;
 };
 
 const Input = ({ label, type = "text", value, onChange, placeholder, icon, required, style = {} }) => (
@@ -152,21 +153,47 @@ const Nav = ({ user, page, setPage, onLogout }) => {
 // ── AUTH PAGE ──────────────────────────────────────────────────────────────
 const AuthPage = ({ onLogin }) => {
   const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ name: "", email: "", password: "", role: "buyer", phone: "", city: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", area: "Koramangala" });
   const [error, setError] = useState("");
   const set = (k) => (v) => setForm(f => ({ ...f, [k]: v }));
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setError("");
-    if (mode === "login") {
-      const found = MOCK_USERS.find(u => u.email === form.email && u.password === form.password);
-      if (!found) { setError("Invalid email or password."); return; }
-      onLogin(found);
-    } else {
-      if (!form.name || !form.email || !form.password) { setError("Please fill all required fields."); return; }
-      const newUser = { id: Date.now(), name: form.name, email: form.email, password: form.password, role: form.role, phone: form.phone, city: form.city, avatar: form.name.slice(0,2).toUpperCase(), bio: "" };
-      MOCK_USERS.push(newUser);
-      onLogin(newUser);
+    const payload = { email: form.email, password: form.password };
+
+    try {
+      let res;
+      if (mode === "login") {
+        res = await fetch(`${API_BASE}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        const signupPayload = {
+          name: form.name,
+          email: form.email,
+          password: form.password,
+          phone: form.phone,
+          area: form.area
+        };
+        res = await fetch(`${API_BASE}/auth/signup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(signupPayload)
+        });
+      }
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.msg || "Authentication failed.");
+        return;
+      }
+
+      onLogin({ ...data.user, token: data.token, avatar: data.user.name?.slice(0,2).toUpperCase() });
+    } catch (err) {
+      console.error(err);
+      setError("Unable to connect to the server. Please try again.");
     }
   };
 
@@ -196,10 +223,19 @@ const AuthPage = ({ onLogin }) => {
           <Input label="Email Address" type="email" value={form.email} onChange={set("email")} placeholder="you@gmail.com" icon="✉" required />
           <Input label="Password" type="password" value={form.password} onChange={set("password")} placeholder="••••••••" icon="🔒" required />
           {mode === "register" && <>
-            <Select label="I am a" value={form.role} onChange={set("role")} options={[{ value: "buyer", label: "Buyer — Looking to buy/rent" }, { value: "seller", label: "Seller — Want to list property" }]} />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <Input label="Phone" value={form.phone} onChange={set("phone")} placeholder="+91 98765 43210" />
-              <Input label="City" value={form.city} onChange={set("city")} placeholder="Bangalore" />
+              <Select label="Select Bangalore area" value={form.area} onChange={set("area")} options={[
+                { value: "Koramangala", label: "Koramangala" },
+                { value: "Indiranagar", label: "Indiranagar" },
+                { value: "Whitefield", label: "Whitefield" },
+                { value: "Jayanagar", label: "Jayanagar" },
+                { value: "HSR Layout", label: "HSR Layout" },
+                { value: "Malleshwaram", label: "Malleshwaram" },
+                { value: "Electronic City", label: "Electronic City" },
+                { value: "Sarjapur Road", label: "Sarjapur Road" },
+                { value: "Yelahanka", label: "Yelahanka" }
+              ]} />
             </div>
           </>}
 
@@ -228,6 +264,11 @@ const PropertyCard = ({ property, onView, compact }) => (
         <Badge color={property.listingType === "sale" ? G.accent : G.green}>{property.listingType === "sale" ? "For Sale" : "For Rent"}</Badge>
         <Badge color={G.gold}>{property.type}</Badge>
       </div>
+      {property.images?.length > 1 && (
+        <div style={{ position: "absolute", top: 12, right: 12, background: "rgba(0,0,0,0.6)", padding: "6px 10px", borderRadius: 999, color: "#fff", fontSize: 12, fontWeight: 700 }}>
+          {property.images.length} images
+        </div>
+      )}
       <div style={{ position: "absolute", bottom: 12, right: 12, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)", borderRadius: 8, padding: "6px 12px" }}>
         <span style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>{fmt(property.price)}</span>
         {property.listingType === "rent" && <span style={{ color: G.textSecondary, fontSize: 11 }}>/mo</span>}
@@ -256,17 +297,25 @@ const BrowsePage = ({ properties, user, onBuyRequest }) => {
   const [customOffer, setCustomOffer] = useState("");
   const [toast, setToast] = useState(null);
 
+  const myProperties = properties.filter(p => p.sellerId === user.id);
   const filtered = properties.filter(p => {
     const matchSearch = p.title.toLowerCase().includes(search.toLowerCase()) || p.location.toLowerCase().includes(search.toLowerCase());
     const matchType = filterType === "all" || p.type === filterType;
     const matchListing = filterListing === "all" || p.listingType === filterListing;
-    return matchSearch && matchType && matchListing;
+    return matchSearch && matchType && matchListing && p.sellerId !== user.id;
   });
 
-  const handleRequest = () => {
+  const handleRequest = async () => {
     const price = offerType === "listed" ? selected.price : Number(customOffer);
     if (!price || isNaN(price)) { setToast({ msg: "Enter a valid offer price", type: "error" }); return; }
-    onBuyRequest({ propertyId: selected.id, propertyTitle: selected.title, sellerId: selected.sellerId, buyerId: user.id, buyerName: user.name, offeredPrice: price, listedPrice: selected.price, status: "pending", date: new Date().toISOString().slice(0,10), message: "" });
+
+    const result = await onBuyRequest({ propertyId: selected.id, offeredPrice: price, message: "" });
+    if (!result) {
+      setToast({ msg: "Unable to send request right now.", type: "error" });
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
+
     setOfferMode(false); setSelected(null);
     setToast({ msg: "Buy request sent successfully!", type: "success" });
     setTimeout(() => setToast(null), 3000);
@@ -279,6 +328,13 @@ const BrowsePage = ({ properties, user, onBuyRequest }) => {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 24 }}>
         <div>
           <img src={selected.images?.[0]} alt={selected.title} style={{ width: "100%", height: 360, objectFit: "cover", borderRadius: 16, marginBottom: 20 }} />
+          {selected.images?.length > 1 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 10, marginBottom: 20 }}>
+              {selected.images.slice(0, 4).map((src, idx) => (
+                <img key={idx} src={src} alt={`${selected.title} ${idx + 1}`} style={{ width: "100%", height: 96, objectFit: "cover", borderRadius: 12 }} />
+              ))}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
             <Badge color={selected.listingType === "sale" ? G.accent : G.green}>{selected.listingType === "sale" ? "For Sale" : "For Rent"}</Badge>
             <Badge color={G.gold}>{selected.type}</Badge>
@@ -382,23 +438,91 @@ const BrowsePage = ({ properties, user, onBuyRequest }) => {
         {filtered.map(p => <PropertyCard key={p.id} property={p} onView={setSelected} />)}
       </div>
       {filtered.length === 0 && <div style={{ textAlign: "center", padding: "60px", color: G.textSecondary }}>No properties found matching your criteria.</div>}
+      {myProperties.length > 0 && (
+        <div style={{ marginTop: 40 }}>
+          <h2 style={{ color: G.textPrimary, fontSize: 26, fontWeight: 800, margin: "0 0 18px" }}>My Properties</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 20 }}>
+            {myProperties.map(p => <PropertyCard key={p.id} property={p} onView={setSelected} />)}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 // ── LIST PROPERTY PAGE ─────────────────────────────────────────────────────
 const ListPage = ({ user, onList }) => {
-  const [form, setForm] = useState({ title: "", type: "apartment", listingType: "sale", price: "", location: "", area: "", bhk: "", address: "", contact: user?.phone || "", description: "", imageUrl: "", amenities: "" });
+  const [form, setForm] = useState({ title: "", type: "apartment", listingType: "sale", price: "", location: "", area: "", bhk: "", address: "", contact: user?.phone || "", description: "", imageUrl: "", images: [], amenities: "" });
   const [toast, setToast] = useState(null);
   const set = (k) => (v) => setForm(f => ({ ...f, [k]: v }));
 
-  const handleSubmit = () => {
-    if (!form.title || !form.price || !form.location || !form.address) { setToast({ msg: "Fill all required fields", type: "error" }); setTimeout(() => setToast(null), 3000); return; }
-    const prop = { id: Date.now(), ...form, price: Number(form.price), area: Number(form.area), bhk: Number(form.bhk) || null, sellerId: user.id, sellerName: user.name, images: form.imageUrl ? [form.imageUrl] : ["https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800&q=80"], status: "available", amenities: form.amenities.split(",").map(a => a.trim()).filter(Boolean) };
-    onList(prop);
-    setToast({ msg: "Property listed successfully!", type: "success" });
-    setTimeout(() => setToast(null), 3000);
-    setForm({ title: "", type: "apartment", listingType: "sale", price: "", location: "", area: "", bhk: "", address: "", contact: user?.phone || "", description: "", imageUrl: "", amenities: "" });
+  const handleSubmit = async () => {
+    if (!form.title || !form.price || !form.location || !form.address) {
+      setToast({ msg: "Fill all required fields", type: "error" });
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
+
+    const payload = {
+      title: form.title,
+      description: form.description,
+      price: Number(form.price),
+      location: form.location,
+      address: form.address,
+      contact: form.contact,
+      listingType: form.listingType,
+      type: form.type,
+      bhk: Number(form.bhk) || null,
+      area: Number(form.area) || null,
+      images: form.images.length ? form.images : ["https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800&q=80"],
+      amenities: form.amenities.split(",").map(a => a.trim()).filter(Boolean)
+    };
+
+    try {
+      const res = await fetch(`${API_BASE}/properties`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setToast({ msg: data.msg || "Unable to list property.", type: "error" });
+        setTimeout(() => setToast(null), 3000);
+        return;
+      }
+
+      const property = {
+        id: data._id,
+        title: data.title,
+        type: data.type,
+        listingType: data.listingType,
+        price: data.price,
+        location: data.location,
+        area: data.area,
+        bhk: data.bhk,
+        address: data.address,
+        contact: data.contact,
+        description: data.description,
+        sellerId: data.seller?._id,
+        sellerName: data.seller?.name || user.name,
+        images: data.images,
+        status: data.status,
+        amenities: data.amenities || []
+      };
+
+      onList(property);
+      setToast({ msg: "Property listed successfully!", type: "success" });
+      setTimeout(() => setToast(null), 3000);
+      setForm({ title: "", type: "apartment", listingType: "sale", price: "", location: "", area: "", bhk: "", address: "", contact: user?.phone || "", description: "", imageUrl: "", images: [], amenities: "" });
+    } catch (err) {
+      console.error(err);
+      setToast({ msg: "Unable to save property right now.", type: "error" });
+      setTimeout(() => setToast(null), 3000);
+    }
   };
 
   return (
@@ -444,11 +568,37 @@ const ListPage = ({ user, onList }) => {
 
       <Card style={{ padding: "28px", marginBottom: 20 }}>
         <h3 style={{ color: G.textPrimary, margin: "0 0 20px", fontSize: 17 }}>Media & Description</h3>
-        <Input label="Property Image URL" value={form.imageUrl} onChange={set("imageUrl")} placeholder="https://example.com/photo.jpg" icon="🖼" />
-        <div style={{ background: "rgba(255,255,255,0.03)", border: `2px dashed ${G.border}`, borderRadius: 12, padding: "24px", textAlign: "center", marginBottom: 18 }}>
-          <p style={{ color: G.textMuted, margin: "0 0 4px", fontSize: 13 }}>📁 Drag & drop photos here</p>
-          <p style={{ color: G.textMuted, margin: 0, fontSize: 12 }}>or use the URL field above (file upload available in full build)</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, marginBottom: 18 }}>
+          <Input label="Property Image URL" value={form.imageUrl} onChange={set("imageUrl")} placeholder="https://example.com/photo.jpg" icon="🖼" />
+          <Btn onClick={() => {
+            if (!form.imageUrl) return;
+            setForm(f => ({ ...f, images: [...f.images, f.imageUrl], imageUrl: "" }));
+          }} size="sm" style={{ alignSelf: "end", justifyContent: "center" }}>Add Image</Btn>
         </div>
+        <div style={{ marginBottom: 18 }}>
+          <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: G.textSecondary, marginBottom: 7, letterSpacing: "0.05em", textTransform: "uppercase" }}>Upload Image</label>
+          <input type="file" accept="image/*" onChange={e => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+              setForm(f => ({ ...f, images: [...f.images, reader.result] }));
+            };
+            reader.readAsDataURL(file);
+            e.target.value = null;
+          }} style={{ width: "100%", background: "rgba(255,255,255,0.04)", border: `1px solid ${G.border}`, borderRadius: 10, padding: "12px 14px", color: G.textPrimary, fontSize: 14 }} />
+        </div>
+        {form.images.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 18 }}>
+            {form.images.map((src, idx) => (
+              <div key={idx} style={{ borderRadius: 14, overflow: "hidden", border: `1px solid ${G.border}`, position: "relative" }}>
+                <img src={src} alt={`Property ${idx + 1}`} style={{ width: "100%", height: 110, objectFit: "cover" }} />
+                <button onClick={() => setForm(f => ({ ...f, images: f.images.filter((_, i) => i !== idx) }))}
+                  style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: 999, width: 26, height: 26, cursor: "pointer" }}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
         <Textarea label="Property Description" value={form.description} onChange={set("description")} placeholder="Describe your property — key features, nearby landmarks, unique selling points..." rows={5} />
         <Input label="Amenities (comma separated)" value={form.amenities} onChange={set("amenities")} placeholder="Gym, Pool, Parking, Security, Solar" icon="✨" />
       </Card>
@@ -477,18 +627,21 @@ const RequestsPage = ({ requests, user, properties, onUpdateRequest }) => {
   const sent = requests.filter(r => r.buyerId === user.id);
   const list = tab === "received" ? received : sent;
 
-  const handleApprove = (req) => {
-    const prop = properties.find(p => p.id === req.propertyId);
-    if (prop) {
-      requests.forEach(r => { if (r.propertyId === req.propertyId && r.id !== req.id) r.status = "rejected"; });
-      prop.status = "sold";
+  const handleApprove = async (req) => {
+    const data = await onUpdateRequest(req.id, "approved");
+    if (data) {
+      setToast({ msg: "Request approved! Property marked as sold.", type: "success" });
+      setTimeout(() => setToast(null), 3000);
     }
-    onUpdateRequest(req.id, "approved");
-    setToast({ msg: "Request approved! Property marked as sold.", type: "success" });
-    setTimeout(() => setToast(null), 3000);
   };
 
-  const handleReject = (req) => { onUpdateRequest(req.id, "rejected"); setToast({ msg: "Request rejected.", type: "error" }); setTimeout(() => setToast(null), 3000); };
+  const handleReject = async (req) => {
+    const data = await onUpdateRequest(req.id, "rejected");
+    if (data) {
+      setToast({ msg: "Request rejected.", type: "error" });
+      setTimeout(() => setToast(null), 3000);
+    }
+  };
 
   const statusColor = { pending: G.gold, approved: G.green, rejected: G.red };
 
@@ -582,9 +735,9 @@ const AIToolsPage = ({ setPage }) => (
 );
 
 // ── PROFILE PAGE ───────────────────────────────────────────────────────────
-const ProfilePage = ({ user, properties, requests }) => {
+const ProfilePage = ({ user, properties, requests, onUpdateUser }) => {
   const [editMode, setEditMode] = useState(false);
-  const [form, setForm] = useState({ name: user.name, phone: user.phone || "", city: user.city || "", bio: user.bio || "" });
+  const [form, setForm] = useState({ name: user.name, phone: user.phone || "", area: user.area || "", bio: user.bio || "" });
   const set = (k) => (v) => setForm(f => ({ ...f, [k]: v }));
 
   const myListings = properties.filter(p => p.sellerId === user.id);
@@ -599,7 +752,7 @@ const ProfilePage = ({ user, properties, requests }) => {
             <div style={{ width: 88, height: 88, borderRadius: "50%", background: `linear-gradient(135deg, ${G.accent}, ${G.accentDark})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36, fontWeight: 700, color: "#fff", margin: "0 auto 16px" }}>{user.avatar || user.name?.slice(0,2).toUpperCase()}</div>
             {!editMode ? <>
               <h2 style={{ color: G.textPrimary, fontSize: 22, fontWeight: 800, margin: "0 0 4px" }}>{user.name}</h2>
-              <Badge color={user.role === "seller" ? G.gold : G.green}>{user.role}</Badge>
+              <Badge color={user.role === "admin" ? G.gold : G.green}>{user.role === "admin" ? "Admin" : "Member"}</Badge>
               <p style={{ color: G.textSecondary, fontSize: 14, margin: "12px 0 0", lineHeight: 1.6 }}>{user.bio || "No bio yet."}</p>
             </> : <>
               <Input label="Full Name" value={form.name} onChange={set("name")} />
@@ -607,7 +760,11 @@ const ProfilePage = ({ user, properties, requests }) => {
             </>}
             <div style={{ borderTop: `1px solid ${G.border}`, marginTop: 20, paddingTop: 20 }}>
               {!editMode ? <>
-                {[["📞", user.phone || "Not set"], ["📍", user.city || "Not set"], ["✉", user.email]].map(([ic, val]) => (
+                {[
+                  ["📞", user.phone || "Not set"],
+                  ["📍", `${user.area ? user.area + ', ' : ''}Bangalore`],
+                  ["✉", user.email || "Not set"]
+                ].map(([ic, val]) => (
                   <div key={val} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, textAlign: "left" }}>
                     <span style={{ fontSize: 16 }}>{ic}</span>
                     <span style={{ color: G.textSecondary, fontSize: 14 }}>{val}</span>
@@ -616,9 +773,19 @@ const ProfilePage = ({ user, properties, requests }) => {
                 <Btn onClick={() => setEditMode(true)} variant="secondary" size="sm" style={{ width: "100%", justifyContent: "center", marginTop: 8 }}>✏ Edit Profile</Btn>
               </> : <>
                 <Input label="Phone" value={form.phone} onChange={set("phone")} />
-                <Input label="City" value={form.city} onChange={set("city")} />
+                <Select label="Area in Bangalore" value={form.area} onChange={set("area")} options={[
+                  { value: "Koramangala", label: "Koramangala" },
+                  { value: "Indiranagar", label: "Indiranagar" },
+                  { value: "Whitefield", label: "Whitefield" },
+                  { value: "Jayanagar", label: "Jayanagar" },
+                  { value: "HSR Layout", label: "HSR Layout" },
+                  { value: "Malleshwaram", label: "Malleshwaram" },
+                  { value: "Electronic City", label: "Electronic City" },
+                  { value: "Sarjapur Road", label: "Sarjapur Road" },
+                  { value: "Yelahanka", label: "Yelahanka" }
+                ]} />
                 <div style={{ display: "flex", gap: 8 }}>
-                  <Btn onClick={() => { Object.assign(user, form); setEditMode(false); }} size="sm" style={{ flex: 1, justifyContent: "center" }}>Save</Btn>
+                  <Btn onClick={() => { onUpdateUser(form); setEditMode(false); }} size="sm" style={{ flex: 1, justifyContent: "center" }}>Save</Btn>
                   <Btn onClick={() => setEditMode(false)} variant="secondary" size="sm" style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
                 </div>
               </>}
@@ -626,7 +793,7 @@ const ProfilePage = ({ user, properties, requests }) => {
           </Card>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {[["Listings", myListings.length, G.accent], ["Requests", myRequests.length, G.gold], ["Approved", approved, G.green], ["Role", user.role, G.textSecondary]].map(([label, val, color]) => (
+            {[["Listings", myListings.length, G.accent], ["Requests", myRequests.length, G.gold], ["Approved", approved, G.green], ["Status", user.role === "admin" ? "Admin" : "Member", G.textSecondary]].map(([label, val, color]) => (
               <Card key={label} style={{ padding: "16px", textAlign: "center" }}>
                 <p style={{ color, fontWeight: 800, fontSize: 22, margin: "0 0 4px" }}>{val}</p>
                 <p style={{ color: G.textMuted, fontSize: 11, margin: 0, textTransform: "uppercase", fontWeight: 600 }}>{label}</p>
@@ -681,21 +848,127 @@ const ProfilePage = ({ user, properties, requests }) => {
 export default function App() {
   const [user, setUser] = useState(null);
   const [page, setPage] = useState("browse");
-  const [properties, setProperties] = useState(MOCK_PROPERTIES);
-  const [requests, setRequests] = useState(MOCK_REQUESTS);
+  const [properties, setProperties] = useState([]);
+  const [requests, setRequests] = useState([]);
 
-  const handleList = (prop) => { setProperties(p => [...p, prop]); setPage("browse"); };
-  const handleBuyRequest = (req) => setRequests(r => [...r, { id: Date.now(), ...req }]);
-  const handleUpdateRequest = (id, status) => setRequests(rs => rs.map(r => r.id === id ? { ...r, status } : r));
+  useEffect(() => { fetchProperties(); }, []);
+  useEffect(() => { if (user?.token) fetchRequests(); }, [user]);
 
-  if (!user) return <AuthPage onLogin={setUser} />;
+  const fetchProperties = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/properties`);
+      if (!res.ok) throw new Error("Failed to load properties");
+      const data = await res.json();
+      const loaded = data.map(p => ({
+        id: p._id,
+        title: p.title,
+        type: p.type,
+        listingType: p.listingType,
+        price: p.price,
+        location: p.location,
+        area: p.area,
+        bhk: p.bhk,
+        address: p.address,
+        contact: p.contact,
+        description: p.description,
+        sellerId: p.seller?._id,
+        sellerName: p.seller?.name || "",
+        images: p.images || [],
+        status: p.status,
+        amenities: p.amenities || []
+      }));
+      setProperties(loaded);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchRequests = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/requests`, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (!res.ok) throw new Error("Failed to load requests");
+      const data = await res.json();
+      setRequests(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSetUser = (userData) => {
+    setUser(userData);
+  };
+
+  const handleUserUpdate = (updates) => {
+    setUser(prev => ({ ...prev, ...updates }));
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setPage("browse");
+  };
+
+  const handleList = (prop) => { setProperties(p => [prop, ...p]); setPage("browse"); };
+
+  const handleBuyRequest = async (req) => {
+    try {
+      const res = await fetch(`${API_BASE}/requests`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify(req)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.msg || "Unable to send request");
+      setRequests(r => [...r, data]);
+      return data;
+    } catch (err) {
+      console.error(err);
+      return null;
+    }
+  };
+
+  const handleUpdateRequest = async (id, status) => {
+    try {
+      const res = await fetch(`${API_BASE}/requests/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify({ status })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.msg || "Unable to update request");
+
+      setRequests(rs => rs.map(r => {
+        if (r.id === data.id) return { ...r, status: data.status };
+        if (data.propertyId && data.status === 'approved' && r.propertyId === data.propertyId && r.id !== data.id && r.status === 'pending') {
+          return { ...r, status: 'rejected' };
+        }
+        return r;
+      }));
+      if (data.propertyId && data.propertyStatus) {
+        setProperties(ps => ps.map(p => p.id === data.propertyId ? { ...p, status: data.propertyStatus } : p));
+      }
+      return data;
+    } catch (err) {
+      console.error(err);
+      return null;
+    }
+  };
+
+  if (!user) return <AuthPage onLogin={handleSetUser} />;
 
   const pages = {
     browse: <BrowsePage properties={properties} user={user} onBuyRequest={handleBuyRequest} />,
     list: <ListPage user={user} onList={handleList} />,
     requests: <RequestsPage requests={requests} user={user} properties={properties} onUpdateRequest={handleUpdateRequest} />,
     "ai-tools": <AIToolsPage setPage={setPage} />,
-    profile: <ProfilePage user={user} properties={properties} requests={requests} />,
+    profile: <ProfilePage user={user} properties={properties} requests={requests} onUpdateUser={handleUserUpdate} />,
   };
 
   return (
