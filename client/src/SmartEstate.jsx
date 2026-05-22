@@ -82,6 +82,33 @@ const Select = ({ label, value, onChange, options, required }) => (
   </div>
 );
 
+const SearchableSelect = ({ label, value, onChange, options, required }) => {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const selected = options.find(o => o.value === value);
+  const filtered = options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()));
+  const choose = (option) => {
+    onChange(option.value);
+    setSearch("");
+    setOpen(false);
+  };
+  return (
+    <div style={{ marginBottom: 18, position: "relative" }}>
+      {label && <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: G.textSecondary, marginBottom: 7, letterSpacing: "0.05em", textTransform: "uppercase" }}>{label}{required && <span style={{ color: G.accent, marginLeft: 3 }}>*</span>}</label>}
+      <input type="text" value={open ? search : (selected?.label || value)} onChange={e => { setSearch(e.target.value); setOpen(true); }} onFocus={() => { setSearch(""); setOpen(true); }} onBlur={() => setTimeout(() => setOpen(false), 150)} placeholder="Search..." style={{ width: "100%", background: "rgba(255,255,255,0.04)", border: `1px solid ${G.border}`, borderRadius: 10, padding: "12px 14px", color: G.textPrimary, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+      {open && filtered.length > 0 && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: G.bgCard, border: `1px solid ${G.border}`, borderRadius: 10, marginTop: 4, maxHeight: 400, overflowY: "auto", zIndex: 1000 }}>
+          {filtered.map(o => (
+            <div key={o.value} onMouseDown={e => { e.preventDefault(); choose(o); }} onTouchStart={e => { e.preventDefault(); choose(o); }} style={{ padding: "10px 14px", cursor: "pointer", borderBottom: `1px solid ${G.border}`, fontSize: 13, color: G.textPrimary }}>
+              {o.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Textarea = ({ label, value, onChange, placeholder, rows = 4 }) => (
   <div style={{ marginBottom: 18 }}>
     {label && <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: G.textSecondary, marginBottom: 7, letterSpacing: "0.05em", textTransform: "uppercase" }}>{label}</label>}
@@ -121,6 +148,7 @@ const Nav = ({ user, page, setPage, onLogout }) => {
   const links = [
     { id: "browse", label: "Browse" },
     { id: "list", label: "List Property" },
+    { id: "price-predictor", label: "Price Predictor" },
     { id: "requests", label: "Requests" },
     { id: "ai-tools", label: "AI Tools" },
     { id: "profile", label: "Profile" },
@@ -308,6 +336,7 @@ const BrowsePage = ({ properties, user, onBuyRequest }) => {
   const handleRequest = async () => {
     const price = offerType === "listed" ? selected.price : Number(customOffer);
     if (!price || isNaN(price)) { setToast({ msg: "Enter a valid offer price", type: "error" }); return; }
+    if (price < selected.price) { setToast({ msg: `Offer must be at least ${fmt(selected.price)} (listed price)`, type: "error" }); return; }
 
     const result = await onBuyRequest({ propertyId: selected.id, offeredPrice: price, message: "" });
     if (!result) {
@@ -621,11 +650,22 @@ const ListPage = ({ user, onList }) => {
 // ── REQUESTS PAGE ──────────────────────────────────────────────────────────
 const RequestsPage = ({ requests, user, properties, onUpdateRequest }) => {
   const [tab, setTab] = useState("received");
+  const [selectedProp, setSelectedProp] = useState(null);
   const [toast, setToast] = useState(null);
 
   const received = requests.filter(r => r.sellerId === user.id);
   const sent = requests.filter(r => r.buyerId === user.id);
-  const list = tab === "received" ? received : sent;
+
+  // For received: group by property
+  const receivedByProp = {};
+  received.forEach(r => {
+    if (!receivedByProp[r.propertyId]) receivedByProp[r.propertyId] = [];
+    receivedByProp[r.propertyId].push(r);
+  });
+  const propList = Object.keys(receivedByProp).map(propId => {
+    const prop = properties.find(p => p.id === propId);
+    return { ...prop, requests: receivedByProp[propId] };
+  }).filter(Boolean);
 
   const handleApprove = async (req) => {
     const data = await onUpdateRequest(req.id, "approved");
@@ -648,49 +688,184 @@ const RequestsPage = ({ requests, user, properties, onUpdateRequest }) => {
   return (
     <div style={{ maxWidth: 860, margin: "0 auto", padding: "32px 24px" }}>
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-      <h1 style={{ color: G.textPrimary, fontSize: 32, fontWeight: 800, margin: "0 0 28px" }}>Buy Requests</h1>
+      {selectedProp ? (
+        <>
+          <Btn onClick={() => setSelectedProp(null)} variant="ghost" size="sm" style={{ marginBottom: 20 }}>← Back to Properties</Btn>
+          <h2 style={{ color: G.textPrimary, fontSize: 28, fontWeight: 800, margin: "0 0 20px" }}>{selectedProp.title}</h2>
+          {selectedProp.requests.map(req => (
+            <Card key={req.id} style={{ padding: "24px", marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <Avatar initials={req.buyerName?.slice(0,2).toUpperCase()} size={40} bg={G.accent} />
+                    <div>
+                      <p style={{ color: G.textPrimary, fontWeight: 700, margin: 0, fontSize: 15 }}>From: {req.buyerName}</p>
+                      <p style={{ color: G.textSecondary, fontSize: 13, margin: 0 }}>Buyer · {req.date}</p>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 24, marginTop: 14 }}>
+                    <div><p style={{ color: G.textMuted, fontSize: 11, textTransform: "uppercase", fontWeight: 600, margin: "0 0 3px" }}>Listed Price</p><p style={{ color: G.textPrimary, fontWeight: 700, margin: 0, fontSize: 16 }}>{fmt(req.listedPrice)}</p></div>
+                    <div><p style={{ color: G.textMuted, fontSize: 11, textTransform: "uppercase", fontWeight: 600, margin: "0 0 3px" }}>Offered Price</p><p style={{ color: req.offeredPrice >= req.listedPrice ? G.green : G.red, fontWeight: 800, margin: 0, fontSize: 18 }}>{fmt(req.offeredPrice)}</p></div>
+                    {req.offeredPrice >= req.listedPrice && <div style={{ display: "flex", alignItems: "flex-end" }}><Badge color={G.green}>✓ At or Above Listed</Badge></div>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+                  <Badge color={statusColor[req.status]}>{req.status}</Badge>
+                  {req.status === "pending" && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <Btn onClick={() => handleApprove(req)} size="sm">✓ Approve</Btn>
+                      <Btn onClick={() => handleReject(req)} variant="danger" size="sm">✕ Reject</Btn>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          ))}
+        </>
+      ) : (
+        <>
+          <h1 style={{ color: G.textPrimary, fontSize: 32, fontWeight: 800, margin: "0 0 28px" }}>Buy Requests</h1>
+          <div style={{ display: "flex", gap: 8, marginBottom: 28 }}>
+            {[["received", `Received (${propList.length})`], ["sent", `Sent (${sent.length})`]].map(([v, l]) => (
+              <button key={v} onClick={() => setTab(v)}
+                style={{ padding: "10px 22px", borderRadius: 10, border: `1px solid ${tab === v ? G.accent : G.border}`, background: tab === v ? `${G.accent}22` : "transparent", color: tab === v ? G.accentLight : G.textSecondary, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+            ))}
+          </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 28 }}>
-        {[["received", `Received (${received.length})`], ["sent", `Sent (${sent.length})`]].map(([v, l]) => (
-          <button key={v} onClick={() => setTab(v)}
-            style={{ padding: "10px 22px", borderRadius: 10, border: `1px solid ${tab === v ? G.accent : G.border}`, background: tab === v ? `${G.accent}22` : "transparent", color: tab === v ? G.accentLight : G.textSecondary, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
-        ))}
+          {tab === "received" ? (
+            propList.length === 0 ? (
+              <Card style={{ padding: "48px", textAlign: "center" }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
+                <p style={{ color: G.textSecondary, margin: 0 }}>No properties with requests yet</p>
+              </Card>
+            ) : propList.map(prop => (
+              <Card key={prop.id} onClick={() => setSelectedProp(prop)} style={{ padding: "20px", marginBottom: 12, cursor: "pointer", display: "flex", gap: 16, alignItems: "center" }}>
+                <img src={prop.images?.[0]} alt={prop.title} style={{ width: 80, height: 80, borderRadius: 10, objectFit: "cover" }} />
+                <div style={{ flex: 1 }}>
+                  <p style={{ color: G.textPrimary, fontWeight: 700, margin: "0 0 4px", fontSize: 15 }}>{prop.title}</p>
+                  <p style={{ color: G.textSecondary, fontSize: 12, margin: "0 0 8px" }}>📍 {prop.location}</p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Badge color={G.accent}>{fmt(prop.price)}</Badge>
+                    <Badge color={G.gold}>{prop.area?.toLocaleString()} sqft</Badge>
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ color: G.accent, fontWeight: 800, fontSize: 20, marginBottom: 4 }}>{prop.requests.length}</div>
+                  <p style={{ color: G.textMuted, fontSize: 11, margin: 0, textTransform: "uppercase", fontWeight: 600 }}>Requests</p>
+                </div>
+              </Card>
+            ))
+          ) : sent.length === 0 ? (
+            <Card style={{ padding: "48px", textAlign: "center" }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
+              <p style={{ color: G.textSecondary, margin: 0 }}>No requests sent yet</p>
+            </Card>
+          ) : sent.map(req => (
+            <Card key={req.id} style={{ padding: "24px", marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <Avatar initials={req.propertyTitle?.slice(0,2).toUpperCase()} size={40} bg={G.accent} />
+                    <div>
+                      <p style={{ color: G.textPrimary, fontWeight: 700, margin: 0, fontSize: 15 }}>{req.propertyTitle}</p>
+                      <p style={{ color: G.textSecondary, fontSize: 13, margin: 0 }}>To: {req.sellerName} · {req.date}</p>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 24, marginTop: 14 }}>
+                    <div><p style={{ color: G.textMuted, fontSize: 11, textTransform: "uppercase", fontWeight: 600, margin: "0 0 3px" }}>Listed Price</p><p style={{ color: G.textPrimary, fontWeight: 700, margin: 0, fontSize: 16 }}>{fmt(req.listedPrice)}</p></div>
+                    <div><p style={{ color: G.textMuted, fontSize: 11, textTransform: "uppercase", fontWeight: 600, margin: "0 0 3px" }}>Your Offer</p><p style={{ color: req.offeredPrice >= req.listedPrice ? G.green : G.red, fontWeight: 800, margin: 0, fontSize: 18 }}>{fmt(req.offeredPrice)}</p></div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+                  <Badge color={statusColor[req.status]}>{req.status}</Badge>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </>
+      )}
+    </div>
+  );
+};
+
+// ── PRICE PREDICTOR PAGE ────────────────────────────────────────────────
+const PricePredictorPage = () => {
+  const [opts, setOpts] = useState({ area_types: [], locations: [] });
+  const [form, setForm] = useState({ area_type: '', location: '', total_sqft: '', bhk: '', bath: '', balcony: '' });
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/predict/options').then(r => r.json()).then(data => {
+      if (!mounted) return;
+      setOpts(data || { area_types: [], locations: [] });
+      setForm(f => ({ ...f, area_type: (data.area_types && data.area_types[0]) || '', location: (data.locations && data.locations[0]) || '' }));
+    }).catch(err => console.error(err));
+    return () => { mounted = false };
+  }, []);
+
+  const handle = (k) => (v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handlePredict = async () => {
+    setLoading(true); setResult(null);
+    if (!form.total_sqft || !form.bhk || !form.bath || !form.balcony) { setResult({ error: 'Please fill all fields' }); setLoading(false); return; }
+    try {
+      const res = await fetch('/api/predict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        total_sqft: Number(form.total_sqft) || 0,
+        bath: Number(form.bath) || 0,
+        balcony: Number(form.balcony) || 0,
+        bhk: Number(form.bhk) || 0,
+        area_type: form.area_type,
+        location: form.location
+      })});
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || data.error || 'Prediction failed');
+      setResult(data);
+    } catch (e) {
+      console.error(e);
+      setResult({ error: e.message });
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{ maxWidth: 700, margin: "0 auto", padding: "40px 24px" }}>
+      <div style={{ textAlign: "center", marginBottom: 40 }}>
+        <h1 style={{ color: G.textPrimary, fontSize: 40, fontWeight: 900, margin: "0 0 12px" }}>🤖 AI Price Predictor</h1>
+        <p style={{ color: G.textSecondary, fontSize: 15, margin: 0 }}>Get instant price estimates powered by machine learning trained on real property data</p>
       </div>
 
-      {list.length === 0 ? (
-        <Card style={{ padding: "48px", textAlign: "center" }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
-          <p style={{ color: G.textSecondary, margin: 0 }}>No {tab} requests yet</p>
-        </Card>
-      ) : list.map(req => (
-        <Card key={req.id} style={{ padding: "24px", marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                <Avatar initials={(tab === "received" ? req.buyerName : req.propertyTitle)?.slice(0,2).toUpperCase()} size={40} bg={G.accent} />
-                <div>
-                  <p style={{ color: G.textPrimary, fontWeight: 700, margin: 0, fontSize: 15 }}>{req.propertyTitle}</p>
-                  <p style={{ color: G.textSecondary, fontSize: 13, margin: 0 }}>{tab === "received" ? `From: ${req.buyerName}` : `Seller listed property`} · {req.date}</p>
-                </div>
+      <Card style={{ padding: 36 }}>
+        <SearchableSelect label="Area Type" value={form.area_type} onChange={handle('area_type')} options={opts.area_types.map(a => ({ value: a, label: a }))} />
+        <SearchableSelect label="Location" value={form.location} onChange={handle('location')} options={opts.locations.map(l => ({ value: l, label: l }))} />
+        
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Input label="Total Sqft" value={form.total_sqft} onChange={handle('total_sqft')} placeholder="e.g. 1200" />
+          <Input label="BHK" value={form.bhk} onChange={handle('bhk')} placeholder="e.g. 2" />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Input label="Bathroom" value={form.bath} onChange={handle('bath')} placeholder="e.g. 2" />
+          <Input label="Balcony" value={form.balcony} onChange={handle('balcony')} placeholder="e.g. 1" />
+        </div>
+
+        <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+          <Btn onClick={handlePredict} disabled={loading} size="lg" style={{ flex: 1, justifyContent: 'center' }}>{loading ? '⏳ Predicting…' : '🔮 Predict Price'}</Btn>
+          <Btn onClick={() => { setForm({ area_type: opts.area_types[0]||'', location: opts.locations[0]||'', total_sqft: '', bhk: '', bath: '', balcony: '' }); setResult(null); }} variant="secondary" size="lg" style={{ flex: 1, justifyContent: 'center' }}>↻ Reset</Btn>
+        </div>
+
+        {result && (
+          <div style={{ marginTop: 24, padding: 20, borderRadius: 12, background: result.error ? `${G.red}12` : `${G.accent}12`, border: `1px solid ${result.error ? G.red : G.accent}44` }}>
+            {result.error ? (
+              <div style={{ color: G.red, fontWeight: 600 }}>❌ {result.error}</div>
+            ) : (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ color: G.accent, fontWeight: 900, fontSize: 32, marginBottom: 8 }}>₹ {result.price_lakhs.toFixed(2)} Lakhs</div>
+                <div style={{ color: G.textSecondary, fontSize: 13 }}>Approximately {fmt(Math.round(result.price_lakhs * 100000))}</div>
               </div>
-              <div style={{ display: "flex", gap: 24, marginTop: 14 }}>
-                <div><p style={{ color: G.textMuted, fontSize: 11, textTransform: "uppercase", fontWeight: 600, margin: "0 0 3px" }}>Listed Price</p><p style={{ color: G.textPrimary, fontWeight: 700, margin: 0, fontSize: 16 }}>{fmt(req.listedPrice)}</p></div>
-                <div><p style={{ color: G.textMuted, fontSize: 11, textTransform: "uppercase", fontWeight: 600, margin: "0 0 3px" }}>Offered Price</p><p style={{ color: req.offeredPrice >= req.listedPrice ? G.green : G.gold, fontWeight: 800, margin: 0, fontSize: 18 }}>{fmt(req.offeredPrice)}</p></div>
-                {req.offeredPrice >= req.listedPrice && <div style={{ display: "flex", alignItems: "flex-end" }}><Badge color={G.green}>Above Listed</Badge></div>}
-              </div>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
-              <Badge color={statusColor[req.status]}>{req.status}</Badge>
-              {tab === "received" && req.status === "pending" && (
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  <Btn onClick={() => handleApprove(req)} variant="success" size="sm">✓ Approve</Btn>
-                  <Btn onClick={() => handleReject(req)} variant="danger" size="sm">✕ Reject</Btn>
-                </div>
-              )}
-            </div>
+            )}
           </div>
-        </Card>
-      ))}
+        )}
+      </Card>
     </div>
   );
 };
@@ -706,7 +881,6 @@ const AIToolsPage = ({ setPage }) => (
 
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
       {[
-        { icon: "🤖", title: "AI Price Predictor", sub: "Powered by Machine Learning", desc: "Get an instant price estimate for any property based on location, size, BHK, amenities and 50+ other parameters trained on lakhs of real transactions.", features: ["Random Forest ML model", "Location heat mapping", "Price trend analysis", "Confidence score"], color: G.accent, status: "Phase 3" },
         { icon: "📊", title: "Area Livability Scorer", sub: "Neighbourhood Intelligence", desc: "Comprehensive scoring of any area based on proximity to schools, hospitals, metro, markets, crime data, green cover, and air quality index.", features: ["10+ scoring parameters", "Safety index", "School & hospital proximity", "Air quality data"], color: G.green, status: "Phase 3" },
         { icon: "📈", title: "Market Trend Analyser", sub: "Real-Time Insights", desc: "Track price trends over time for any micro-market. See whether prices are rising or falling and identify the best time to buy or sell.", features: ["Historical price charts", "Micro-market analysis", "Buy/sell signal", "Comparative areas"], color: G.gold, status: "Phase 4" },
         { icon: "🔍", title: "Smart Match", sub: "Personalised Recommendations", desc: "AI learns your preferences from browsing history and buy requests, then surfaces the most relevant properties before anyone else sees them.", features: ["Preference learning", "Budget optimisation", "First-mover alerts", "Wishlist tracking"], color: "#E879F9", status: "Phase 4" },
@@ -733,6 +907,88 @@ const AIToolsPage = ({ setPage }) => (
     </div>
   </div>
 );
+
+
+// ── PRICE PREDICTOR CARD ─────────────────────────────────────────────────
+const PricePredictorCard = () => {
+  const [opts, setOpts] = useState({ area_types: [], locations: [] });
+  const [form, setForm] = useState({ area_type: '', location: '', total_sqft: '', bhk: '', bath: '', balcony: '' });
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/predict/options').then(r => r.json()).then(data => {
+      if (!mounted) return;
+      setOpts(data || { area_types: [], locations: [] });
+      setForm(f => ({ ...f, area_type: (data.area_types && data.area_types[0]) || '', location: (data.locations && data.locations[0]) || '' }));
+    }).catch(err => console.error(err));
+    return () => { mounted = false };
+  }, []);
+
+  const handle = (k) => (v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handlePredict = async () => {
+    setLoading(true); setResult(null);
+    try {
+      const res = await fetch('/api/predict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        total_sqft: Number(form.total_sqft) || 0,
+        bath: Number(form.bath) || 0,
+        balcony: Number(form.balcony) || 0,
+        bhk: Number(form.bhk) || 0,
+        area_type: form.area_type,
+        location: form.location
+      })});
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || data.error || 'Prediction failed');
+      setResult(data);
+    } catch (e) {
+      console.error(e);
+      setResult({ error: e.message });
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <Card style={{ padding: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+        <div style={{ fontSize: 28 }}>🤖</div>
+        <Badge color={G.accent}>AI Price Predictor</Badge>
+      </div>
+      <h3 style={{ color: G.textPrimary, fontSize: 18, margin: '0 0 6px' }}>Instant Price Estimate</h3>
+      <p style={{ color: G.textSecondary, margin: '0 0 16px' }}>Enter property details and get an estimated price from the trained model.</p>
+
+      <Select label="Area Type" value={form.area_type} onChange={handle('area_type')} options={opts.area_types.map(a => ({ value: a, label: a }))} />
+      <Select label="Location" value={form.location} onChange={handle('location')} options={opts.locations.slice(0,200).map(l => ({ value: l, label: l }))} />
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Input label="Total Sqft" value={form.total_sqft} onChange={handle('total_sqft')} placeholder="e.g. 1200" />
+        <Input label="BHK" value={form.bhk} onChange={handle('bhk')} placeholder="e.g. 2" />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Input label="Bathroom" value={form.bath} onChange={handle('bath')} placeholder="e.g. 2" />
+        <Input label="Balcony" value={form.balcony} onChange={handle('balcony')} placeholder="e.g. 1" />
+      </div>
+
+      <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+        <Btn onClick={handlePredict} disabled={loading} size="lg">{loading ? 'Predicting…' : 'Predict Price'}</Btn>
+        <Btn onClick={() => { setForm({ area_type: opts.area_types[0]||'', location: opts.locations[0]||'', total_sqft: '', bhk: '', bath: '', balcony: '' }); setResult(null); }} variant="secondary" size="lg">Reset</Btn>
+      </div>
+
+      {result && (
+        <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: result.error ? `${G.red}12` : `${G.green}08`, border: `1px solid ${G.border}` }}>
+          {result.error ? (
+            <div style={{ color: G.red }}>{result.error}</div>
+          ) : (
+            <div>
+              <div style={{ color: G.accent, fontWeight: 900, fontSize: 20 }}>{result.price_lakhs} Lakhs</div>
+              <div style={{ color: G.textSecondary }}>Approx. {fmt(Math.round(result.price_lakhs * 100000))}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+};
 
 // ── PROFILE PAGE ───────────────────────────────────────────────────────────
 const ProfilePage = ({ user, properties, requests, onUpdateUser }) => {
@@ -966,6 +1222,7 @@ export default function App() {
   const pages = {
     browse: <BrowsePage properties={properties} user={user} onBuyRequest={handleBuyRequest} />,
     list: <ListPage user={user} onList={handleList} />,
+    "price-predictor": <PricePredictorPage />,
     requests: <RequestsPage requests={requests} user={user} properties={properties} onUpdateRequest={handleUpdateRequest} />,
     "ai-tools": <AIToolsPage setPage={setPage} />,
     profile: <ProfilePage user={user} properties={properties} requests={requests} onUpdateUser={handleUserUpdate} />,
