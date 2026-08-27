@@ -232,11 +232,12 @@ const AuthPage = ({ onLogin }) => {
 
       <div style={{ width: "100%", maxWidth: 460, position: "relative" }}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 16, background: G.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, margin: "0 auto 16px" }}>🏠</div>
+          <div style={{ display: "inline-block", background: `${G.accent}22`, border: `1px solid ${G.accent}44`, borderRadius: 999, padding: "6px 18px", fontSize: 12, fontWeight: 700, color: G.accent, letterSpacing: "0.1em", marginBottom: 16, textTransform: "uppercase" }}>Phase 3 — Coming Soon</div>
           <h1 style={{ color: G.textPrimary, fontSize: 32, fontWeight: 800, margin: "0 0 8px", letterSpacing: "-0.03em" }}>SmartEstate</h1>
-          <p style={{ color: G.textSecondary, fontSize: 15, margin: 0 }}>India's smartest property platform</p>
+          <p style={{ color: G.textSecondary, fontSize: 15, margin: 0 }}>
+            India's smartest property platform
+          </p>
         </div>
-
         <Card style={{ padding: "36px 36px 32px" }}>
           <div style={{ display: "flex", background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: 4, marginBottom: 28 }}>
             {["login", "register"].map(m => (
@@ -870,19 +871,95 @@ const PricePredictorPage = () => {
   );
 };
 
+// ── MARKET TREND ANALYZER ──────────────────────────────────────────────────
+const TrendChart = ({ history, currentPrice, predictedPrice }) => {
+  const points = history.map(item => item.price_per_sqft);
+  const values = [...points, predictedPrice];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const width = 760;
+  const height = 250;
+  const chartPoints = values.map((value, index) => `${(index / (values.length - 1)) * width},${height - 24 - ((value - min) / range) * (height - 48)}`).join(' ');
+  const splitX = points.length > 1 ? ((points.length - 1) / (values.length - 1)) * width : 0;
+
+  return (
+    <div style={{ overflowX: "auto", paddingTop: 12 }}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Historical and predicted price chart" style={{ width: "100%", minWidth: 560, height: 250 }}>
+        <line x1={splitX} x2={splitX} y1="16" y2={height - 18} stroke={G.gold} strokeDasharray="5 5" opacity="0.7" />
+        <polyline points={chartPoints} fill="none" stroke={G.accentLight} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+        {values.map((value, index) => <circle key={`${value}-${index}`} cx={(index / (values.length - 1)) * width} cy={height - 24 - ((value - min) / range) * (height - 48)} r={index === values.length - 1 ? 6 : 4} fill={index === values.length - 1 ? G.gold : G.accentLight} />)}
+        <text x="8" y="18" fill={G.textMuted} fontSize="12">₹{Math.round(max).toLocaleString("en-IN")}</text>
+        <text x="8" y={height - 4} fill={G.textMuted} fontSize="12">₹{Math.round(min).toLocaleString("en-IN")}</text>
+        <text x={Math.min(splitX + 8, width - 100)} y="28" fill={G.gold} fontSize="12">Forecast</text>
+      </svg>
+      <div style={{ display: "flex", gap: 18, color: G.textSecondary, fontSize: 12, marginTop: 4 }}>
+        <span><b style={{ color: G.accentLight }}>●</b> Historical price</span>
+        <span><b style={{ color: G.gold }}>●</b> Predicted next value</span>
+        <span>Latest: ₹{Math.round(currentPrice).toLocaleString("en-IN")}/sqft</span>
+      </div>
+    </div>
+  );
+};
+
+const MarketTrendAnalyzer = () => {
+  const [localities, setLocalities] = useState([]);
+  const [locality, setLocality] = useState("");
+  const [trend, setTrend] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch('/api/market-trends/options').then(res => res.json()).then(data => {
+      setLocalities(data.localities || []);
+      if (data.localities?.length) setLocality(data.localities[0]);
+      else setError(data.detail || "No localities are available.");
+    }).catch(() => setError("Unable to load localities. Make sure the server and Python model dependencies are running.")).finally(() => setOptionsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!locality) return;
+    setLoading(true); setError("");
+    fetch(`/api/market-trends/${encodeURIComponent(locality)}`).then(res => res.json().then(data => ({ res, data }))).then(({ res, data }) => {
+      if (!res.ok) throw new Error(data.detail || data.error || "Unable to load market trend.");
+      setTrend(data);
+    }).catch(err => { setTrend(null); setError(err.message); }).finally(() => setLoading(false));
+  }, [locality]);
+
+  const formatPrice = value => `₹${Math.round(value).toLocaleString("en-IN")}`;
+  return (
+    <Card style={{ padding: 28, gridColumn: "1 / -1" }} hover={false}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div><Badge color={G.gold}>Live model</Badge><h3 style={{ color: G.textPrimary, fontSize: 22, fontWeight: 800, margin: "14px 0 5px" }}>Market Trend Analyser</h3><p style={{ color: G.textSecondary, fontSize: 13, margin: 0 }}>Explore historical price movement and the six-month forecast for a Bengaluru locality.</p></div>
+        <div style={{ minWidth: 260, flex: "0 1 320px" }}><Select label="Select locality" value={locality} onChange={setLocality} options={localities.length ? localities.map(item => ({ value: item, label: item })) : [{ value: "", label: optionsLoading ? "Loading localities..." : "No localities found" }]} /></div>
+      </div>
+      {loading && <p style={{ color: G.textSecondary, margin: "26px 0 0" }}>Loading market data...</p>}
+      {error && <p style={{ color: G.red, margin: "26px 0 0", fontWeight: 600 }}>{error}</p>}
+      {trend && !loading && <>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12, marginTop: 24 }}>
+          {[['Zone', trend.zone], ['Property type', trend.property_type], ['Latest data', trend.latest_date], ['Current price', `${formatPrice(trend.current_price)}/sqft`], ['Expected change', `${trend.change_percent >= 0 ? '+' : ''}${trend.change_percent}%`]].map(([label, value]) => <div key={label} style={{ padding: "15px 16px", background: "rgba(255,255,255,0.04)", border: `1px solid ${G.border}`, borderRadius: 10 }}><div style={{ color: G.textMuted, fontSize: 11, textTransform: "uppercase", fontWeight: 700, marginBottom: 7 }}>{label}</div><div style={{ color: label === "Expected change" ? (trend.change_percent >= 0 ? G.green : G.red) : G.textPrimary, fontSize: 15, fontWeight: 800 }}>{value}</div></div>)}
+        </div>
+        <div style={{ marginTop: 26, paddingTop: 20, borderTop: `1px solid ${G.border}` }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}><h4 style={{ color: G.textPrimary, fontSize: 16, margin: 0 }}>Price history</h4><span style={{ color: G.gold, fontSize: 13, fontWeight: 700 }}>Forecast: {formatPrice(trend.predicted_price)}/sqft in {trend.forecast_period.toLowerCase()}</span></div><TrendChart history={trend.history} currentPrice={trend.current_price} predictedPrice={trend.predicted_price} /></div>
+      </>}
+    </Card>
+  );
+};
+
 // ── AI TOOLS PAGE ──────────────────────────────────────────────────────────
 const AIToolsPage = ({ setPage }) => (
   <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 24px" }}>
     <div style={{ textAlign: "center", marginBottom: 48 }}>
-      <div style={{ display: "inline-block", background: `${G.accent}22`, border: `1px solid ${G.accent}44`, borderRadius: 999, padding: "6px 18px", fontSize: 12, fontWeight: 700, color: G.accent, letterSpacing: "0.1em", marginBottom: 16, textTransform: "uppercase" }}>Phase 3 — Coming Soon</div>
+      <div style={{ display: "inline-block", background: `${G.accent}22`, border: `1px solid ${G.accent}44`, borderRadius: 999, padding: "6px 18px", fontSize: 12, fontWeight: 700, color: G.accent, letterSpacing: "0.1em", marginBottom: 16, textTransform: "uppercase" }}>Decision support</div>
       <h1 style={{ color: G.textPrimary, fontSize: 40, fontWeight: 900, margin: "0 0 12px", letterSpacing: "-0.03em" }}>AI-Powered Tools</h1>
       <p style={{ color: G.textSecondary, fontSize: 17, maxWidth: 500, margin: "0 auto", lineHeight: 1.6 }}>Next-gen intelligence to help you make smarter property decisions</p>
     </div>
 
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+    <MarketTrendAnalyzer />
+
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 24 }}>
       {[
         { icon: "📊", title: "Area Livability Scorer", sub: "Neighbourhood Intelligence", desc: "Comprehensive scoring of any area based on proximity to schools, hospitals, metro, markets, crime data, green cover, and air quality index.", features: ["10+ scoring parameters", "Safety index", "School & hospital proximity", "Air quality data"], color: G.green, status: "Phase 3" },
-        { icon: "📈", title: "Market Trend Analyser", sub: "Real-Time Insights", desc: "Track price trends over time for any micro-market. See whether prices are rising or falling and identify the best time to buy or sell.", features: ["Historical price charts", "Micro-market analysis", "Buy/sell signal", "Comparative areas"], color: G.gold, status: "Phase 4" },
         { icon: "🔍", title: "Smart Match", sub: "Personalised Recommendations", desc: "AI learns your preferences from browsing history and buy requests, then surfaces the most relevant properties before anyone else sees them.", features: ["Preference learning", "Budget optimisation", "First-mover alerts", "Wishlist tracking"], color: "#E879F9", status: "Phase 4" },
       ].map(tool => (
         <Card key={tool.title} style={{ padding: "28px", position: "relative", overflow: "hidden" }}>
