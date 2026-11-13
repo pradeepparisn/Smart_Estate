@@ -149,6 +149,7 @@ const Nav = ({ user, page, setPage, onLogout }) => {
     { id: "browse", label: "Browse" },
     { id: "list", label: "List Property" },
     { id: "price-predictor", label: "Price Predictor" },
+    { id: "area-insights", label: "Area Insights" },
     { id: "requests", label: "Requests" },
     { id: "ai-tools", label: "AI Tools" },
     { id: "profile", label: "Profile" },
@@ -157,7 +158,6 @@ const Nav = ({ user, page, setPage, onLogout }) => {
     <nav style={{ background: "rgba(10,15,30,0.95)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${G.border}`, position: "sticky", top: 0, zIndex: 100, padding: "0 32px" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", height: 64, gap: 8 }}>
         <div onClick={() => setPage("browse")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 10, marginRight: 32 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, background: G.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏠</div>
           <span style={{ fontWeight: 800, fontSize: 20, color: G.textPrimary, letterSpacing: "-0.02em" }}>Smart<span style={{ color: G.accent }}>Estate</span></span>
         </div>
         <div style={{ display: "flex", gap: 4, flex: 1 }}>
@@ -232,7 +232,6 @@ const AuthPage = ({ onLogin }) => {
 
       <div style={{ width: "100%", maxWidth: 460, position: "relative" }}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <div style={{ display: "inline-block", background: `${G.accent}22`, border: `1px solid ${G.accent}44`, borderRadius: 999, padding: "6px 18px", fontSize: 12, fontWeight: 700, color: G.accent, letterSpacing: "0.1em", marginBottom: 16, textTransform: "uppercase" }}>Phase 3 — Coming Soon</div>
           <h1 style={{ color: G.textPrimary, fontSize: 32, fontWeight: 800, margin: "0 0 8px", letterSpacing: "-0.03em" }}>SmartEstate</h1>
           <p style={{ color: G.textSecondary, fontSize: 15, margin: 0 }}>
             India's smartest property platform
@@ -832,7 +831,7 @@ const PricePredictorPage = () => {
   return (
     <div style={{ maxWidth: 700, margin: "0 auto", padding: "40px 24px" }}>
       <div style={{ textAlign: "center", marginBottom: 40 }}>
-        <h1 style={{ color: G.textPrimary, fontSize: 40, fontWeight: 900, margin: "0 0 12px" }}>🤖 AI Price Predictor</h1>
+        <h1 style={{ color: G.textPrimary, fontSize: 40, fontWeight: 900, margin: "0 0 12px" }}> AI Price Predictor</h1>
         <p style={{ color: G.textSecondary, fontSize: 15, margin: 0 }}>Get instant price estimates powered by machine learning trained on real property data</p>
       </div>
 
@@ -878,25 +877,51 @@ const TrendChart = ({ history, currentPrice, predictedPrice }) => {
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
-  const width = 760;
-  const height = 250;
-  const chartPoints = values.map((value, index) => `${(index / (values.length - 1)) * width},${height - 24 - ((value - min) / range) * (height - 48)}`).join(' ');
-  const splitX = points.length > 1 ? ((points.length - 1) / (values.length - 1)) * width : 0;
+  const width = 820;
+  const height = 320;
+  const plot = { left: 92, right: 20, top: 24, bottom: 64 };
+  const plotWidth = width - plot.left - plot.right;
+  const plotHeight = height - plot.top - plot.bottom;
+  const xFor = index => plot.left + (index / Math.max(values.length - 1, 1)) * plotWidth;
+  const yFor = value => plot.top + plotHeight - ((value - min) / range) * plotHeight;
+  const chartPoints = values.map((value, index) => `${xFor(index)},${yFor(value)}`).join(' ');
+  const splitX = points.length > 1 ? xFor(points.length - 1) : plot.left;
+  const yTicks = Array.from({ length: 5 }, (_, index) => min + (range * index) / 4);
+  const yearFor = item => {
+    const date = new Date(`${item.date}T00:00:00`);
+    return Number.isNaN(date.getTime()) ? String(item.year || item.date || '') : String(date.getFullYear());
+  };
+  const xTickIndexes = history.reduce((indexes, item, index) => {
+    const year = yearFor(item);
+    if (year && !indexes.some(existingIndex => yearFor(history[existingIndex]) === year)) indexes.push(index);
+    return indexes;
+  }, []);
 
   return (
     <div style={{ overflowX: "auto", paddingTop: 12 }}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Historical and predicted price chart" style={{ width: "100%", minWidth: 560, height: 250 }}>
-        <line x1={splitX} x2={splitX} y1="16" y2={height - 18} stroke={G.gold} strokeDasharray="5 5" opacity="0.7" />
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Historical and predicted price per square foot by year" style={{ width: "100%", minWidth: 600, height: 300 }}>
+        {yTicks.map((tick, index) => {
+          const y = yFor(tick);
+          return <g key={index}>
+            <line x1={plot.left} x2={width - plot.right} y1={y} y2={y} stroke={G.border} opacity="0.7" />
+            <text x={plot.left - 10} y={y + 4} fill={G.textMuted} fontSize="12" textAnchor="end">Rs. {Math.round(tick).toLocaleString("en-IN")}</text>
+          </g>;
+        })}
+        <line x1={plot.left} x2={plot.left} y1={plot.top} y2={plot.top + plotHeight} stroke={G.textMuted} />
+        <line x1={plot.left} x2={width - plot.right} y1={plot.top + plotHeight} y2={plot.top + plotHeight} stroke={G.textMuted} />
+        <line x1={splitX} x2={splitX} y1={plot.top} y2={plot.top + plotHeight} stroke={G.gold} strokeDasharray="5 5" opacity="0.7" />
         <polyline points={chartPoints} fill="none" stroke={G.accentLight} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-        {values.map((value, index) => <circle key={`${value}-${index}`} cx={(index / (values.length - 1)) * width} cy={height - 24 - ((value - min) / range) * (height - 48)} r={index === values.length - 1 ? 6 : 4} fill={index === values.length - 1 ? G.gold : G.accentLight} />)}
-        <text x="8" y="18" fill={G.textMuted} fontSize="12">₹{Math.round(max).toLocaleString("en-IN")}</text>
-        <text x="8" y={height - 4} fill={G.textMuted} fontSize="12">₹{Math.round(min).toLocaleString("en-IN")}</text>
-        <text x={Math.min(splitX + 8, width - 100)} y="28" fill={G.gold} fontSize="12">Forecast</text>
+        {values.map((value, index) => <circle key={`${value}-${index}`} cx={xFor(index)} cy={yFor(value)} r={index === values.length - 1 ? 6 : 4} fill={index === values.length - 1 ? G.gold : G.accentLight} />)}
+        {xTickIndexes.map(index => <text key={index} x={xFor(index)} y={plot.top + plotHeight + 22} fill={G.textMuted} fontSize="12" textAnchor="middle">{yearFor(history[index])}</text>)}
+        <text x={xFor(values.length - 1)} y={plot.top + plotHeight + 22} fill={G.gold} fontSize="12" textAnchor="middle">{history.length ? `${yearFor(history[history.length - 1])} + 6 mo` : 'Forecast'}</text>
+        <text x={(plot.left + width - plot.right) / 2} y={height - 6} fill={G.textSecondary} fontSize="13" textAnchor="middle">Year</text>
+        <text x="18" y={plot.top + plotHeight / 2} fill={G.textSecondary} fontSize="13" textAnchor="middle" transform={`rotate(-90 18 ${plot.top + plotHeight / 2})`}>Price (Rs./sqft)</text>
+        <text x={Math.min(splitX + 8, width - 100)} y={plot.top + 14} fill={G.gold} fontSize="12">Forecast</text>
       </svg>
       <div style={{ display: "flex", gap: 18, color: G.textSecondary, fontSize: 12, marginTop: 4 }}>
-        <span><b style={{ color: G.accentLight }}>●</b> Historical price</span>
-        <span><b style={{ color: G.gold }}>●</b> Predicted next value</span>
-        <span>Latest: ₹{Math.round(currentPrice).toLocaleString("en-IN")}/sqft</span>
+        <span style={{ color: G.accentLight }}>Historical price</span>
+        <span style={{ color: G.gold }}>Predicted next value</span>
+        <span>Latest: Rs. {Math.round(currentPrice).toLocaleString("en-IN")}/sqft</span>
       </div>
     </div>
   );
@@ -946,6 +971,419 @@ const MarketTrendAnalyzer = () => {
   );
 };
 
+// ── AREA INSIGHTS PAGE ─────────────────────────────────────────────────────
+const AreaInsightsPage = ({ user }) => {
+  const [rankings, setRankings] = useState([]);
+  const [selectedArea, setSelectedArea] = useState('');
+  const [areaDetail, setAreaDetail] = useState(null);
+  const [opinions, setOpinions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({
+    title: '',
+    content: '',
+    rating: 5,
+    safetyRating: 4,
+    cleanlinessRating: 4,
+    transportationRating: 4,
+    amenitiesRating: 4,
+    trafficRating: 4,
+    connectivityRating: 4,
+  });
+
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/area-insights/areas')
+      .then((res) => res.json())
+      .then((data) => {
+        if (!mounted) return;
+        const items = data.areas || [];
+        setRankings(items);
+        if (items.length > 0) {
+          setSelectedArea(items[0].area);
+        }
+      })
+      .catch(() => setError('Unable to load area insights. Please check the backend dataset.'))
+      .finally(() => mounted && setLoading(false));
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedArea) return;
+    setReviewsLoading(true);
+    Promise.all([
+      fetch(`/api/area-insights/areas/${encodeURIComponent(selectedArea)}`).then(res => res.json()),
+      fetch(`/api/area-insights/opinions/${encodeURIComponent(selectedArea)}`).then(res => res.json())
+    ])
+      .then(([areaData, opinionsData]) => {
+        setAreaDetail(areaData);
+        setOpinions(opinionsData.opinions || []);
+        setError('');
+      })
+      .catch(() => setError('Unable to load the selected area details.'))
+      .finally(() => setReviewsLoading(false));
+  }, [selectedArea]);
+
+  const scoreValue = areaDetail?.score ?? 0;
+  const avgReview = opinions.length
+    ? opinions.reduce((sum, opinion) => sum + Number(opinion.rating || 0), 0) / opinions.length
+    : 0;
+
+  const handleOpinionSubmit = async () => {
+    if (!user?.token) {
+      setError('Please sign in before sharing an experience.');
+      return;
+    }
+
+    const payload = {
+      area: selectedArea,
+      title: form.title,
+      content: form.content,
+      rating: Number(form.rating),
+      safetyRating: Number(form.safetyRating),
+      cleanlinessRating: Number(form.cleanlinessRating),
+      transportationRating: Number(form.transportationRating),
+      amenitiesRating: Number(form.amenitiesRating),
+      trafficRating: Number(form.trafficRating),
+      connectivityRating: Number(form.connectivityRating),
+      user: user.name
+    };
+
+    try {
+      const res = await fetch('/api/area-insights/opinions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.msg || 'Unable to submit review');
+      setOpinions(prev => [data, ...prev]);
+      setShowForm(false);
+      setForm({
+        title: '',
+        content: '',
+        rating: 5,
+        safetyRating: 4,
+        cleanlinessRating: 4,
+        transportationRating: 4,
+        amenitiesRating: 4,
+        trafficRating: 4,
+        connectivityRating: 4,
+      });
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Unable to submit experience.');
+    }
+  };
+
+  const rendersStars = (value, total = 5) => Array.from({ length: total }, (_, idx) => (
+    <span key={idx} style={{ color: idx < Math.round(value) ? G.gold : 'rgba(255,255,255,0.15)', fontSize: 14 }}>★</span>
+  ));
+
+  const renderFactorMeter = (label, value, max = 10, color = G.accent) => (
+    <div key={label} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${G.border}`, borderRadius: 12, padding: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, gap: 8 }}>
+        <span style={{ color: G.textSecondary, fontSize: 12, fontWeight: 700, textTransform: 'uppercase' }}>{label}</span>
+        <span style={{ color: G.textPrimary, fontWeight: 800 }}>{(Number(value) * 10 / max).toFixed(1)}/10</span>
+      </div>
+      <div style={{ height: 10, borderRadius: 999, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+        <div style={{ width: `${(Number(value) / max) * 100}%`, height: '100%', borderRadius: 999, background: color }} />
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 24px 48px' }}>
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'inline-block', background: `${G.accent}22`, border: `1px solid ${G.accent}44`, borderRadius: 999, padding: '6px 18px', fontSize: 12, fontWeight: 700, color: G.accent, letterSpacing: '0.1em', marginBottom: 14, textTransform: 'uppercase' }}>Real estate intelligence</div>
+        <h1 style={{ color: G.textPrimary, fontSize: 40, fontWeight: 900, margin: '0 0 8px', letterSpacing: '-0.03em' }}>Area Insights</h1>
+        <p style={{ color: G.textSecondary, fontSize: 16, margin: 0 }}>Explore Bengaluru localities using safety data and real community experiences.</p>
+      </div>
+
+      <Card style={{ padding: '24px', marginBottom: 24 }}>
+        <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: G.textSecondary, marginBottom: 10, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Search or select an area</label>
+        <select value={selectedArea} onChange={(e) => setSelectedArea(e.target.value)}
+          style={{ width: '100%', background: '#1a2235', border: `1px solid ${G.border}`, borderRadius: 10, padding: '12px 14px', color: G.textPrimary, fontSize: 14, fontFamily: 'inherit', outline: 'none' }}>
+          {rankings.length === 0 ? <option value="">Loading areas...</option> : rankings.map(item => (
+            <option key={item.area} value={item.area}>{item.area}</option>
+          ))}
+        </select>
+      </Card>
+
+      {loading && <p style={{ color: G.textSecondary }}>Loading Bengaluru safety rankings...</p>}
+      {error && <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: G.red, padding: '12px 16px', borderRadius: 10, marginBottom: 24 }}>{error}</div>}
+
+      {!loading && areaDetail && (
+        <>
+          <Card style={{ padding: '28px', marginBottom: 28 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+              <div>
+                <p style={{ color: G.textMuted, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px', fontWeight: 700 }}>Selected Area</p>
+                <h2 style={{ color: G.textPrimary, fontSize: 34, fontWeight: 900, margin: 0 }}>{areaDetail.area}</h2>
+              </div>
+              <div style={{ background: `${G.green}14`, border: `1px solid ${G.green}44`, padding: '16px 18px', borderRadius: 16, minWidth: 180, textAlign: 'center' }}>
+                <p style={{ color: G.textSecondary, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px', fontWeight: 700 }}>Safety Score</p>
+                <div style={{ color: G.textPrimary, fontSize: 28, fontWeight: 900 }}>{scoreValue.toFixed(1)} <span style={{ color: G.textSecondary, fontSize: 14 }}>/ 100</span></div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+              {[
+                ['Total Crime Incidents', areaDetail.totalIncidents],
+                ['Day Crimes', areaDetail.dayCrimeCount],
+                ['Night Crimes', areaDetail.nightCrimeCount],
+                ['Night Crime %', `${areaDetail.nightCrimePercentage}%`],
+                ['High Severity', areaDetail.highSeverity],
+                ['Medium Severity', areaDetail.mediumSeverity],
+                ['Low Severity', areaDetail.lowSeverity],
+              ].map(([label, value]) => (
+                <div key={label} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${G.border}`, borderRadius: 12, padding: 16 }}>
+                  <div style={{ color: G.textMuted, fontSize: 11, textTransform: 'uppercase', fontWeight: 700, marginBottom: 8 }}>{label}</div>
+                  <div style={{ color: G.textPrimary, fontSize: 20, fontWeight: 800 }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 0.75fr', gap: 24, marginBottom: 28 }}>
+            <Card style={{ padding: '24px' }}>
+              <h3 style={{ color: G.textPrimary, fontSize: 22, fontWeight: 800, margin: '0 0 16px' }}>Crime Types</h3>
+              <div style={{ display: 'grid', gap: 12 }}>
+                {Object.entries(areaDetail.crimeTypeDistribution || {}).map(([crime, count]) => (
+                  <div key={crime}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ color: G.textSecondary }}>{crime}</span>
+                      <strong style={{ color: G.textPrimary }}>{count}</strong>
+                    </div>
+                    <div style={{ height: 10, background: 'rgba(255,255,255,0.05)', borderRadius: 999, overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.min((count / Math.max(...Object.values(areaDetail.crimeTypeDistribution || {0: 1})), 1) * 100, 100)}%`, height: '100%', background: `linear-gradient(90deg, ${G.accent}, ${G.green})`, borderRadius: 999 }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Card style={{ padding: '24px' }}>
+              <h3 style={{ color: G.textPrimary, fontSize: 22, fontWeight: 800, margin: '0 0 16px' }}>Crime Severity</h3>
+              <div style={{ display: 'grid', gap: 12 }}>
+                {[
+                  ['High', areaDetail.highSeverity, G.red],
+                  ['Medium', areaDetail.mediumSeverity, G.gold],
+                  ['Low', areaDetail.lowSeverity, G.green],
+                ].map(([label, value, color]) => (
+                  <div key={label}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ color: G.textSecondary }}>{label}</span>
+                      <strong style={{ color: G.textPrimary }}>{value}</strong>
+                    </div>
+                    <div style={{ height: 10, background: 'rgba(255,255,255,0.05)', borderRadius: 999, overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.min((Number(value) / Math.max(areaDetail.totalIncidents, 1)) * 100, 100)}%`, height: '100%', background: color, borderRadius: 999 }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 28 }}>
+            <Card style={{ padding: '24px' }}>
+              <h3 style={{ color: G.textPrimary, fontSize: 22, fontWeight: 800, margin: '0 0 18px' }}>Day / Night Analysis</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {[['Day Crimes', areaDetail.dayCrimeCount, G.green], ['Night Crimes', areaDetail.nightCrimeCount, G.red]].map(([label, value, color]) => (
+                  <div key={label} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${G.border}`, borderRadius: 12, padding: 16 }}>
+                    <div style={{ color: G.textMuted, fontSize: 11, textTransform: 'uppercase', fontWeight: 700, marginBottom: 10 }}>{label}</div>
+                    <div style={{ height: 12, borderRadius: 999, background: 'rgba(255,255,255,0.05)', overflow: 'hidden', marginBottom: 8 }}>
+                      <div style={{ width: `${Math.min((Number(value) / Math.max(areaDetail.totalIncidents, 1)) * 100, 100)}%`, height: '100%', background: color, borderRadius: 999 }} />
+                    </div>
+                    <strong style={{ color: G.textPrimary, fontSize: 18 }}>{value}</strong>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Card style={{ padding: '24px' }}>
+              <h3 style={{ color: G.textPrimary, fontSize: 22, fontWeight: 800, margin: '0 0 18px' }}>Environmental Safety Factors</h3>
+              <div style={{ display: 'grid', gap: 12 }}>
+                {renderFactorMeter('Lighting', areaDetail.lightingAvg, 1, G.green)}
+                {renderFactorMeter('CCTV', areaDetail.cctvAvg, 1, G.accent)}
+                {renderFactorMeter('Crowd Density', areaDetail.crowdDensityAvg, 1, G.gold)}
+                {renderFactorMeter('Police Proximity', areaDetail.policeProximityAvg, 1, G.red)}
+              </div>
+            </Card>
+          </div>
+
+          <Card style={{ padding: '24px', marginBottom: 28 }}>
+            <h3 style={{ color: G.textPrimary, fontSize: 22, fontWeight: 800, margin: '0 0 16px' }}>Why this score?</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+              <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 16, padding: 18 }}>
+                <h4 style={{ margin: '0 0 12px', color: G.green, fontSize: 15, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Positive factors</h4>
+                <ul style={{ margin: 0, paddingLeft: 18, color: G.textPrimary, lineHeight: 1.8 }}>
+                  {(areaDetail.positiveFactors || []).map((factor) => <li key={factor}>{factor}</li>)}
+                </ul>
+              </div>
+              <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 16, padding: 18 }}>
+                <h4 style={{ margin: '0 0 12px', color: G.red, fontSize: 15, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Risk factors</h4>
+                <ul style={{ margin: 0, paddingLeft: 18, color: G.textPrimary, lineHeight: 1.8 }}>
+                  {(areaDetail.riskFactors || []).map((factor) => <li key={factor}>{factor}</li>)}
+                </ul>
+              </div>
+            </div>
+          </Card>
+        </>
+      )}
+
+      {!loading && selectedArea && (
+        <div style={{ marginTop: 32 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+            <h3 style={{ color: G.textPrimary, fontSize: 28, fontWeight: 800, margin: 0 }}>Community Opinions</h3>
+            <Btn onClick={() => setShowForm(!showForm)} size="md">{showForm ? 'Close' : 'Share Your Experience'}</Btn>
+          </div>
+
+          {showForm && (
+            <Card style={{ padding: '24px', marginBottom: 20 }}>
+              <div style={{ display: 'grid', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <div>
+                    <label style={{ display: 'block', color: G.textSecondary, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Area</label>
+                    <input value={selectedArea} readOnly style={{ width: '100%', background: 'rgba(255,255,255,0.04)', color: G.textPrimary, border: `1px solid ${G.border}`, borderRadius: 10, padding: '12px 14px', fontFamily: 'inherit' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', color: G.textSecondary, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Overall Rating</label>
+                    <div style={{ display: 'flex', gap: 6, padding: '11px 12px', borderRadius: 10, border: `1px solid ${G.border}`, background: 'rgba(255,255,255,0.04)' }}>
+                      {[1,2,3,4,5].map((star) => (
+                        <button key={star} type="button" onClick={() => setForm(f => ({ ...f, rating: star }))} style={{ border: 'none', background: 'transparent', color: star <= form.rating ? G.gold : 'rgba(255,255,255,0.25)', cursor: 'pointer', fontSize: 22, padding: 0 }}>
+                          ★
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', color: G.textSecondary, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Review Title</label>
+                  <input value={form.title} onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))} placeholder="My experience living in ..." style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: `1px solid ${G.border}`, borderRadius: 10, padding: '12px 14px', color: G.textPrimary, fontFamily: 'inherit' }} />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', color: G.textSecondary, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Your Experience</label>
+                  <textarea value={form.content} onChange={(e) => setForm(f => ({ ...f, content: e.target.value }))} rows={5} placeholder="Share what daily life feels like in this area..." style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: `1px solid ${G.border}`, borderRadius: 10, padding: '12px 14px', color: G.textPrimary, fontFamily: 'inherit', resize: 'vertical' }} />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+                  {[
+                    ['Safety', 'safetyRating'],
+                    ['Cleanliness', 'cleanlinessRating'],
+                    ['Transportation', 'transportationRating'],
+                    ['Amenities', 'amenitiesRating'],
+                    ['Traffic', 'trafficRating'],
+                    ['Connectivity', 'connectivityRating'],
+                  ].map(([label, field]) => (
+                    <div key={field}>
+                      <label style={{ display: 'block', color: G.textSecondary, fontSize: 11, fontWeight: 700, marginBottom: 8, textTransform: 'uppercase' }}>{label}</label>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {[1,2,3,4,5].map((star) => (
+                          <button key={star} type="button" onClick={() => setForm(f => ({ ...f, [field]: star }))} style={{ border: 'none', background: 'transparent', color: star <= form[field] ? G.gold : 'rgba(255,255,255,0.25)', cursor: 'pointer', fontSize: 18, padding: 0 }}>
+                            ★
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <Btn onClick={handleOpinionSubmit} size="md">Submit Experience</Btn>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          <Card style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ color: G.textSecondary, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, fontWeight: 700 }}>Community Rating</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: G.textPrimary, fontSize: 24, fontWeight: 800 }}>{avgReview ? avgReview.toFixed(1) : '0.0'} / 5</span>
+                  <div style={{ display: 'flex', gap: 3 }}>{rendersStars(avgReview || 0)}</div>
+                </div>
+              </div>
+              <div style={{ color: G.textSecondary, fontSize: 14, fontWeight: 600 }}>{opinions.length} review{opinions.length === 1 ? '' : 's'}</div>
+            </div>
+
+            {reviewsLoading ? <p style={{ color: G.textSecondary }}>Loading reviews...</p> : opinions.length === 0 ? (
+              <div style={{ padding: '20px', textAlign: 'center', background: 'rgba(255,255,255,0.03)', borderRadius: 12, color: G.textSecondary }}>No community reviews yet for this area. Be the first to share an experience.</div>
+            ) : (
+              <div style={{ display: 'grid', gap: 16 }}>
+                {opinions.map((opinion) => (
+                  <div key={opinion._id || opinion.id} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${G.border}`, borderRadius: 14, padding: '18px 18px 16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 38, height: 38, borderRadius: '50%', background: `${G.accent}22`, color: G.accentLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>{(opinion.user || 'U').slice(0, 2).toUpperCase()}</div>
+                        <div>
+                          <div style={{ color: G.textPrimary, fontWeight: 700 }}>{opinion.user || 'Anonymous'}</div>
+                          <div style={{ color: G.textSecondary, fontSize: 12 }}>{new Date(opinion.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>{rendersStars(Number(opinion.rating || 0))}</div>
+                    </div>
+                    <h4 style={{ color: G.textPrimary, fontSize: 18, fontWeight: 800, margin: '0 0 8px' }}>{opinion.title}</h4>
+                    <p style={{ color: G.textSecondary, lineHeight: 1.7, margin: '0 0 12px' }}>{opinion.content}</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {[
+                        ['Safety', opinion.safetyRating],
+                        ['Cleanliness', opinion.cleanlinessRating],
+                        ['Transport', opinion.transportationRating],
+                        ['Amenities', opinion.amenitiesRating],
+                        ['Traffic', opinion.trafficRating],
+                        ['Connectivity', opinion.connectivityRating],
+                      ].map(([label, value]) => (
+                        <span key={`${opinion._id}-${label}`} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${G.border}`, borderRadius: 999, padding: '5px 10px', color: G.textSecondary, fontSize: 11, fontWeight: 700 }}>{label}: {Number(value || 0).toFixed(1)}</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {!loading && rankings.length > 0 && (
+        <Card style={{ padding: '24px' }}>
+          <h3 style={{ color: G.textPrimary, fontSize: 24, fontWeight: 800, margin: '0 0 18px' }}>Bengaluru Area Safety Rankings</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 540 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${G.border}` }}>
+                  <th style={{ textAlign: 'left', color: G.textMuted, fontSize: 12, textTransform: 'uppercase', padding: '10px 12px' }}>Rank</th>
+                  <th style={{ textAlign: 'left', color: G.textMuted, fontSize: 12, textTransform: 'uppercase', padding: '10px 12px' }}>Area</th>
+                  <th style={{ textAlign: 'left', color: G.textMuted, fontSize: 12, textTransform: 'uppercase', padding: '10px 12px' }}>Safety Score</th>
+                  <th style={{ textAlign: 'left', color: G.textMuted, fontSize: 12, textTransform: 'uppercase', padding: '10px 12px' }}>Crime Incidents</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rankings.map((item) => (
+                  <tr key={item.area} onClick={() => setSelectedArea(item.area)} style={{ cursor: 'pointer', borderBottom: `1px solid ${G.border}`, background: selectedArea === item.area ? 'rgba(108,99,255,0.08)' : 'transparent' }}>
+                    <td style={{ padding: '12px', color: G.textPrimary, fontWeight: 700 }}>{item.rank}</td>
+                    <td style={{ padding: '12px', color: G.textPrimary, fontWeight: 700 }}>{item.area}</td>
+                    <td style={{ padding: '12px', color: item.score >= 50 ? G.green : G.gold, fontWeight: 800 }}>{item.score.toFixed(1)}/100</td>
+                    <td style={{ padding: '12px', color: G.textSecondary }}>{item.crimeIncidents}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+};
+
 // ── AI TOOLS PAGE ──────────────────────────────────────────────────────────
 const AIToolsPage = ({ setPage }) => (
   <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 24px" }}>
@@ -956,32 +1394,6 @@ const AIToolsPage = ({ setPage }) => (
     </div>
 
     <MarketTrendAnalyzer />
-
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 24 }}>
-      {[
-        { icon: "📊", title: "Area Livability Scorer", sub: "Neighbourhood Intelligence", desc: "Comprehensive scoring of any area based on proximity to schools, hospitals, metro, markets, crime data, green cover, and air quality index.", features: ["10+ scoring parameters", "Safety index", "School & hospital proximity", "Air quality data"], color: G.green, status: "Phase 3" },
-        { icon: "🔍", title: "Smart Match", sub: "Personalised Recommendations", desc: "AI learns your preferences from browsing history and buy requests, then surfaces the most relevant properties before anyone else sees them.", features: ["Preference learning", "Budget optimisation", "First-mover alerts", "Wishlist tracking"], color: "#E879F9", status: "Phase 4" },
-      ].map(tool => (
-        <Card key={tool.title} style={{ padding: "28px", position: "relative", overflow: "hidden" }}>
-          <div style={{ position: "absolute", top: -20, right: -20, width: 120, height: 120, borderRadius: "50%", background: `${tool.color}08`, filter: "blur(20px)", pointerEvents: "none" }} />
-          <div style={{ position: "relative" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-              <div style={{ fontSize: 36 }}>{tool.icon}</div>
-              <Badge color={tool.color}>{tool.status}</Badge>
-            </div>
-            <h3 style={{ color: G.textPrimary, fontSize: 20, fontWeight: 800, margin: "0 0 4px" }}>{tool.title}</h3>
-            <p style={{ color: tool.color, fontSize: 12, fontWeight: 700, margin: "0 0 14px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{tool.sub}</p>
-            <p style={{ color: G.textSecondary, fontSize: 13, lineHeight: 1.6, margin: "0 0 18px" }}>{tool.desc}</p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {tool.features.map(f => <span key={f} style={{ background: `${tool.color}15`, color: tool.color, border: `1px solid ${tool.color}30`, borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 600 }}>{f}</span>)}
-            </div>
-            <div style={{ marginTop: 20, padding: "14px", background: "rgba(255,255,255,0.03)", borderRadius: 10, textAlign: "center" }}>
-              <p style={{ color: G.textMuted, fontSize: 13, margin: 0 }}>🚧 Implementation guide available — ask me to build this!</p>
-            </div>
-          </div>
-        </Card>
-      ))}
-    </div>
   </div>
 );
 
@@ -1028,7 +1440,6 @@ const PricePredictorCard = () => {
   return (
     <Card style={{ padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-        <div style={{ fontSize: 28 }}>🤖</div>
         <Badge color={G.accent}>AI Price Predictor</Badge>
       </div>
       <h3 style={{ color: G.textPrimary, fontSize: 18, margin: '0 0 6px' }}>Instant Price Estimate</h3>
@@ -1300,6 +1711,7 @@ export default function App() {
     browse: <BrowsePage properties={properties} user={user} onBuyRequest={handleBuyRequest} />,
     list: <ListPage user={user} onList={handleList} />,
     "price-predictor": <PricePredictorPage />,
+    "area-insights": <AreaInsightsPage user={user} />,
     requests: <RequestsPage requests={requests} user={user} properties={properties} onUpdateRequest={handleUpdateRequest} />,
     "ai-tools": <AIToolsPage setPage={setPage} />,
     profile: <ProfilePage user={user} properties={properties} requests={requests} onUpdateUser={handleUserUpdate} />,
